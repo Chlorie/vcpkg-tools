@@ -23,12 +23,15 @@ class Updater:
         self._portfile: Optional[Portfile] = None
         self._manifest: Optional[Manifest] = None
         self._latest_ref: str = ""
+        self._vcpkg_latest_ref: str = ""
         self._repo = Repo(self._config.ports_path)
 
     def run(self):
         self._print_config()
         self._get_portfile()
-        self._latest_ref = self._get_latest_ref()
+        portfile = cast(Portfile, self._portfile)
+        self._latest_ref = self._get_latest_ref(portfile.repo, portfile.head_ref)
+        self._vcpkg_latest_ref = self._get_latest_ref("microsoft/vcpkg", "master")
         self._get_manifest()
         self._update_port()
         self._update_versions()
@@ -54,10 +57,9 @@ class Updater:
         info("    SHA512:   {}", self._portfile.sha512)
         info("    HEAD_REF: {}", self._portfile.head_ref)
 
-    def _get_latest_ref(self) -> str:
-        info("Retrieving latest ref...")
-        portfile = cast(Portfile, self._portfile)
-        uri = f"https://api.github.com/repos/{portfile.repo}/commits/{portfile.head_ref}"
+    def _get_latest_ref(self, repo: str, head_ref: str) -> str:
+        info(f"Retrieving latest ref from {repo}:{head_ref}...")
+        uri = f"https://api.github.com/repos/{repo}/commits/{head_ref}"
         res = requests.get(uri, proxies=self._proxy)
         if res.status_code != 200:
             error("Failed to retrieve latest ref, status code {}", res.status_code)
@@ -173,7 +175,12 @@ class Updater:
                 "repository": "file:///" + str(self._config.ports_path.absolute()),
                 "packages": [self._config.name],
                 "baseline": str(self._repo.rev_parse("HEAD"))
-            }]
+            }],
+            "default-registry": {
+                "kind": "git",
+                "repository": "https://github.com/microsoft/vcpkg",
+                "baseline": self._vcpkg_latest_ref
+            }
         }
         port_vcpkg_config = self._get_vcpkg_config()
         if port_vcpkg_config:
